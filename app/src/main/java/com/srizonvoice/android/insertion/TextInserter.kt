@@ -42,8 +42,21 @@ class TextInserter(
             copyToClipboard(text)
             return
         }
-        if (tryPaste(focused, text)) return
-        if (focused.isEditable && trySetTextWithMerge(focused, text)) return
+        // Snapshot once so the success path can restore the user's prior clipboard
+        // *only* if we actually inserted text. If everything fails, we want the
+        // transcript to stay on the clipboard for manual paste — restoring would
+        // race with our own `copyToClipboard` fallback and clear it ~500 ms later.
+        val priorClipboard = snapshotClipboard()
+        if (tryPaste(focused, text)) {
+            scheduleClipboardRestore(priorClipboard)
+            return
+        }
+        if (focused.isEditable && trySetTextWithMerge(focused, text)) {
+            scheduleClipboardRestore(priorClipboard)
+            return
+        }
+        // Couldn't insert anywhere. Make sure the transcript ends up on the
+        // clipboard (tryPaste may have already done this; this is a safety net).
         copyToClipboard(text)
     }
 
@@ -90,28 +103,45 @@ class TextInserter(
     }
 
     /**
-     * Tries to paste [text] into [node] or any ancestor up to [PASTE_ANCESTOR_LIMIT]
-     * levels up. WebViews in particular often expose paste on the WebView root or
-     * an intermediate container while the actual focused `<input>` node returns
-     * false for ACTION_PASTE. Walking up the tree fixes the common case.
+     * Tries to paste [text] into [node] or an ancestor up to [PASTE_ANCESTOR_LIMIT]
+     * levels up. The caller is responsible for scheduling clipboard restoration
+     * only on success.
+     *
+     * Two refinements over the naive "just call performAction":
+     *  - Focus the node before pasting. Some WebView virtual inputs only honor
+     *    ACTION_PASTE while they're the focused element.
+     *  - Only invoke paste on nodes that explicitly list ACTION_PASTE in their
+     *    [AccessibilityNodeInfo.actionList]. Without this filter, ancestors
+     *    sometimes return `true` from `performAction(ACTION_PASTE)` without
+     *    actually pasting anything — the clipboard ends up populated, the user
+     *    sees nothing in the field, and we incorrectly claim success.
      */
     private fun tryPaste(node: AccessibilityNodeInfo, text: String): Boolean {
-        val saved = snapshotClipboard()
         clipboard.setPrimaryClip(ClipData.newPlainText("transcript", text))
+
+        // Best-effort focus on the leaf — needed by some WebView fields, harmless elsewhere.
+        runCatching { node.performAction(AccessibilityNodeInfo.ACTION_FOCUS) }
+
         var current: AccessibilityNodeInfo? = node
-        var pasted = false
         var levels = 0
         while (current != null && levels < PASTE_ANCESTOR_LIMIT) {
-            if (current.performAction(AccessibilityNodeInfo.ACTION_PASTE)) {
-                pasted = true
-                break
+            if (current.supportsAction(AccessibilityNodeInfo.ACTION_PASTE) &&
+                current.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            ) {
+                return true
             }
             current = current.parent
             levels++
         }
-        main.postDelayed({ runCatching { restoreClipboard(saved) } }, CLIPBOARD_RESTORE_DELAY_MS)
-        return pasted
+        return false
     }
+
+    private fun scheduleClipboardRestore(saved: ClipData?) {
+        main.postDelayed({ runCatching { restoreClipboard(saved) } }, CLIPBOARD_RESTORE_DELAY_MS)
+    }
+
+    private fun AccessibilityNodeInfo.supportsAction(actionId: Int): Boolean =
+        actionList.any { it.id == actionId }
 
     private fun copyToClipboard(text: String) {
         clipboard.setPrimaryClip(ClipData.newPlainText("transcript", text))
