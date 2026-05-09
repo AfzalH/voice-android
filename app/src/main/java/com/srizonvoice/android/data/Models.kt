@@ -16,15 +16,15 @@ enum class RecordingMode(val rawValue: String, val displayName: String) {
     }
 }
 
-/** Whisper model choice — defaults to turbo to optimize for speed. */
+/** Whisper model choice — defaults to the full v3 model for accuracy. */
 enum class TranscriptionModel(val id: String, val displayName: String) {
-    WHISPER_TURBO("whisper-large-v3-turbo", "Prefer Speed"),
     WHISPER_V3("whisper-large-v3", "Prefer Accuracy"),
+    WHISPER_TURBO("whisper-large-v3-turbo", "Prefer Speed"),
     ;
 
     companion object {
         fun fromId(value: String?): TranscriptionModel =
-            entries.firstOrNull { it.id == value } ?: WHISPER_TURBO
+            entries.firstOrNull { it.id == value } ?: WHISPER_V3
     }
 }
 

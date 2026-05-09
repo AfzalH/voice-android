@@ -16,5 +16,4 @@
     <string name="error_invalid_response">Invalid network response.</string>
     <string name="error_invalid_url">Invalid API URL.</string>
     <string name="error_insertion_failed">Unable to insert text in current app.</string>
-    <string name="info_copied_to_clipboard">Transcript copied to clipboard.</string>
 </resources>

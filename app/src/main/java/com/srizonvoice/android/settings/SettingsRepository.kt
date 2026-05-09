@@ -34,8 +34,11 @@ class SettingsRepository(private val context: Context) {
             postProcessingEnabled = prefs[Keys.POST_PROCESSING_ENABLED] ?: true,
             useGemini = prefs[Keys.USE_GEMINI] ?: false,
             postProcessingPrompt = prefs[Keys.POST_PROCESSING_PROMPT] ?: DEFAULT_POST_PROCESSING_PROMPT,
+            translationEnabled = prefs[Keys.TRANSLATION_ENABLED] ?: false,
+            targetLanguage = LanguageOption.fromCode(prefs[Keys.TARGET_LANGUAGE]),
+            recentTargetLanguages = decodeRecent(prefs[Keys.RECENT_TARGET_LANGUAGES]),
             recordingMode = RecordingMode.fromRaw(prefs[Keys.RECORDING_MODE]),
-            handsfreeMaxMinutes = prefs[Keys.HANDSFREE_MAX_MINUTES] ?: 5,
+            handsfreeMaxMinutes = prefs[Keys.HANDSFREE_MAX_MINUTES] ?: 1,
             triggerMode = TriggerMode.fromRaw(prefs[Keys.TRIGGER_MODE]),
             bubbleOpacity = (prefs[Keys.BUBBLE_OPACITY] ?: DEFAULT_BUBBLE_OPACITY).coerceIn(MIN_OPACITY, 1f),
             onboardingComplete = prefs[Keys.ONBOARDING_COMPLETE] ?: false,
@@ -70,6 +73,22 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setPostProcessingPrompt(prompt: String) = edit {
         it[Keys.POST_PROCESSING_PROMPT] = prompt
+    }
+
+    suspend fun setTranslationEnabled(enabled: Boolean) = edit {
+        it[Keys.TRANSLATION_ENABLED] = enabled
+    }
+
+    suspend fun setTargetLanguage(language: LanguageOption) = edit {
+        // Stack semantics: drop the new pick, prepend the previous selection,
+        // cap at MAX_RECENT — same shape as `setLanguage` for the dictation list.
+        val previous = LanguageOption.fromCode(it[Keys.TARGET_LANGUAGE])
+        val recent = decodeRecent(it[Keys.RECENT_TARGET_LANGUAGES]).filterNot { lang -> lang == language }
+        val updated = (listOf(previous) + recent)
+            .filterNot { lang -> lang == language }
+            .take(MAX_RECENT)
+        it[Keys.TARGET_LANGUAGE] = language.code
+        it[Keys.RECENT_TARGET_LANGUAGES] = encodeRecent(updated)
     }
 
     suspend fun setRecordingMode(mode: RecordingMode) = edit {
@@ -115,6 +134,9 @@ class SettingsRepository(private val context: Context) {
         val POST_PROCESSING_ENABLED = booleanPreferencesKey("llm.postProcessingEnabled")
         val USE_GEMINI = booleanPreferencesKey("llm.useGemini")
         val POST_PROCESSING_PROMPT = stringPreferencesKey("llm.postProcessingSystemPrompt")
+        val TRANSLATION_ENABLED = booleanPreferencesKey("llm.translationEnabled")
+        val TARGET_LANGUAGE = stringPreferencesKey("llm.targetLanguage")
+        val RECENT_TARGET_LANGUAGES = stringPreferencesKey("llm.recentTargetLanguages")
         val RECORDING_MODE = stringPreferencesKey("app.recordingMode")
         val HANDSFREE_MAX_MINUTES = intPreferencesKey("app.handsfreeMaxMinutes")
         val TRIGGER_MODE = stringPreferencesKey("trigger.mode")
@@ -124,7 +146,7 @@ class SettingsRepository(private val context: Context) {
 
     companion object {
         const val MAX_RECENT = 3
-        const val DEFAULT_BUBBLE_OPACITY = 0.5f
+        const val DEFAULT_BUBBLE_OPACITY = 0.7f
         const val MIN_OPACITY = 0.1f
     }
 }
@@ -136,6 +158,9 @@ data class SettingsState(
     val postProcessingEnabled: Boolean,
     val useGemini: Boolean,
     val postProcessingPrompt: String,
+    val translationEnabled: Boolean,
+    val targetLanguage: LanguageOption,
+    val recentTargetLanguages: List<LanguageOption>,
     val recordingMode: RecordingMode,
     val handsfreeMaxMinutes: Int,
     val triggerMode: TriggerMode,

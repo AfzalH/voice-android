@@ -30,30 +30,24 @@ class SrizonApp : Application() {
     private fun registerNotificationChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        // The recording foreground service has to be tied to a channel even
+        // though the user typically never sees the notification (we don't
+        // declare POST_NOTIFICATIONS so the system suppresses the visible
+        // chrome on Android 13+ — the service itself still runs).
         nm.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_RECORDING,
                 "Recording",
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "Active while SrizonVoice is recording or ready to record."
+                description = "Active while SrizonVoice's bubble is running."
                 setShowBadge(false)
-            },
-        )
-        nm.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_INFO,
-                "Transcripts & errors",
-                NotificationManager.IMPORTANCE_DEFAULT,
-            ).apply {
-                description = "Transcript-copied confirmations and dictation errors."
             },
         )
     }
 
     companion object {
         const val CHANNEL_RECORDING = "srizon.recording"
-        const val CHANNEL_INFO = "srizon.info"
 
         private lateinit var appInstance: SrizonApp
         fun get(): SrizonApp = appInstance

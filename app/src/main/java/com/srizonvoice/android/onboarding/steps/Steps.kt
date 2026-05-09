@@ -219,19 +219,6 @@ fun MicrophoneStep(granted: Boolean, onRequest: () -> Unit, onContinue: () -> Un
 }
 
 @Composable
-fun NotificationsStep(granted: Boolean, onRequest: () -> Unit, onContinue: () -> Unit) {
-    StepScaffold(
-        title = "Notifications",
-        subtitle = "Required so the recording bubble can run as a foreground service. We also use it for transcript-copied confirmations.",
-        content = { GrantStatusRow(granted, "Notifications permission") },
-        actions = {
-            if (!granted) Button(onClick = onRequest, modifier = Modifier.fillMaxWidth()) { Text("Allow notifications") }
-            else Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) { Text("Continue") }
-        },
-    )
-}
-
-@Composable
 fun OverlayStep(granted: Boolean, onOpenSettings: () -> Unit, onContinue: () -> Unit) {
     StepScaffold(
         title = "Display over other apps",
@@ -277,8 +264,6 @@ fun DoneStep(snapshot: PermissionsSnapshot, onFinish: () -> Unit) {
             Card {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatusLine("Microphone", snapshot.microphone)
-                    HorizontalDivider()
-                    StatusLine("Notifications", snapshot.notifications)
                     HorizontalDivider()
                     StatusLine("Display over other apps", snapshot.overlay)
                     HorizontalDivider()

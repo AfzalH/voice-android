@@ -28,7 +28,6 @@ import com.srizonvoice.android.onboarding.steps.DoneStep
 import com.srizonvoice.android.onboarding.steps.GeminiKeyStep
 import com.srizonvoice.android.onboarding.steps.GroqKeyStep
 import com.srizonvoice.android.onboarding.steps.MicrophoneStep
-import com.srizonvoice.android.onboarding.steps.NotificationsStep
 import com.srizonvoice.android.onboarding.steps.OverlayStep
 import com.srizonvoice.android.onboarding.steps.WelcomeStep
 import com.srizonvoice.android.ui.SrizonTheme
@@ -41,17 +40,12 @@ class OnboardingActivity : ComponentActivity() {
     private val state = MutableStateFlow(
         PermissionsSnapshot(
             microphone = false,
-            notifications = false,
             overlay = false,
             accessibility = false,
         ),
     )
 
     private val requestMic = registerForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { refresh() }
-
-    private val requestNotifications = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { refresh() }
 
@@ -99,13 +93,6 @@ class OnboardingActivity : ComponentActivity() {
                             MicrophoneStep(
                                 granted = perms.microphone,
                                 onRequest = { requestMic.launch(Manifest.permission.RECORD_AUDIO) },
-                                onContinue = { nav.navigate("notifications") },
-                            )
-                        }
-                        composable("notifications") {
-                            NotificationsStep(
-                                granted = perms.notifications,
-                                onRequest = { requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS) },
                                 onContinue = { nav.navigate("overlay") },
                             )
                         }
@@ -166,5 +153,4 @@ class OnboardingActivity : ComponentActivity() {
         )
         startActivity(intent)
     }
-
 }

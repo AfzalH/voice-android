@@ -71,11 +71,9 @@ class BubbleService : Service() {
     private var hasMovedBeyondSlop = false
 
     /** Where the touch landed on the bubble surface. Used to dispatch the inline
-     * Done/Cancel buttons in handsfree wide mode. Captured at ACTION_DOWN, locked
-     * for the entire touch sequence so dragging out of a button doesn't fire it. */
-    private var touchZone: TouchZone = TouchZone.MIDDLE
-
-    private enum class TouchZone { LEFT_BUTTON, RIGHT_BUTTON, MIDDLE }
+     * Settings/Cancel/Done buttons in handsfree wide mode. Captured at ACTION_DOWN,
+     * locked for the entire touch sequence so dragging out of a button doesn't fire it. */
+    private var touchZone: BubbleView.TouchZone = BubbleView.TouchZone.MIDDLE
 
     /** Cached recording mode — touch events run synchronously, can't await DataStore. */
     @Volatile
@@ -111,6 +109,9 @@ class BubbleService : Service() {
                 currentMode = settings.recordingMode
                 idleOpacity = settings.bubbleOpacity
                 bubbleView?.setRecordingMode(settings.recordingMode)
+                bubbleView?.setTranslateButtonShown(
+                    settings.postProcessingEnabled && settings.translationEnabled,
+                )
                 applyOpacity()
             }
         }
@@ -216,13 +217,16 @@ class BubbleService : Service() {
                 view.dragState.touchY = event.rawY
                 isCancelHovering = false
                 hasMovedBeyondSlop = false
-                touchZone = computeTouchZone(view, event.x)
+                touchZone = view.touchZoneAt(event.x)
                 when (touchZone) {
-                    TouchZone.LEFT_BUTTON, TouchZone.RIGHT_BUTTON -> {
+                    BubbleView.TouchZone.SETTINGS,
+                    BubbleView.TouchZone.CANCEL,
+                    BubbleView.TouchZone.TRANSLATE,
+                    BubbleView.TouchZone.DONE -> {
                         // Inline button hit — don't move the bubble, don't start PTT.
                         // We'll fire the action on ACTION_UP if the touch stays in zone.
                     }
-                    TouchZone.MIDDLE -> {
+                    BubbleView.TouchZone.MIDDLE -> {
                         if (currentMode == RecordingMode.PUSH_TO_TALK) {
                             pttArmJob = scope.launch {
                                 delay(PTT_ACTIVATION_DELAY_MS)
@@ -238,7 +242,7 @@ class BubbleService : Service() {
                 true
             }
             MotionEvent.ACTION_MOVE -> {
-                if (touchZone == TouchZone.MIDDLE) {
+                if (touchZone == BubbleView.TouchZone.MIDDLE) {
                     handleMiddleMove(view, params, event)
                 }
                 // Inline-button touches don't drag — nothing to do here.
@@ -248,13 +252,15 @@ class BubbleService : Service() {
                 pttArmJob?.cancel()
                 pttArmJob = null
                 when (touchZone) {
-                    TouchZone.LEFT_BUTTON -> cancelRecording()
-                    TouchZone.RIGHT_BUTTON -> stopAndTranscribe()
-                    TouchZone.MIDDLE -> handleTouchEnd()
+                    BubbleView.TouchZone.SETTINGS -> openSettings()
+                    BubbleView.TouchZone.CANCEL -> cancelRecording()
+                    BubbleView.TouchZone.TRANSLATE -> stopAndTranscribe(translate = true)
+                    BubbleView.TouchZone.DONE -> stopAndTranscribe()
+                    BubbleView.TouchZone.MIDDLE -> handleTouchEnd()
                 }
                 view.setCancelHover(false)
                 isCancelHovering = false
-                touchZone = TouchZone.MIDDLE
+                touchZone = BubbleView.TouchZone.MIDDLE
                 // Always try to snap on release. If recording just started (handsfree
                 // tap, or PTT activation), state is non-idle and scheduleSnap defers
                 // to the state observer for the post-wave snap.
@@ -307,14 +313,13 @@ class BubbleService : Service() {
         return rawY < display.heightPixels * CANCEL_ZONE_FRACTION
     }
 
-    private fun computeTouchZone(view: BubbleView, x: Float): TouchZone {
-        if (!view.hasInlineButtons()) return TouchZone.MIDDLE
-        val zone = view.inlineButtonZoneWidth()
-        return when {
-            x < zone -> TouchZone.LEFT_BUTTON
-            x > view.width - zone -> TouchZone.RIGHT_BUTTON
-            else -> TouchZone.MIDDLE
-        }
+    private fun openSettings() {
+        // Drop any in-flight recording first — the user is leaving the bubble UI
+        // and won't be able to release/confirm it from inside Settings.
+        cancelRecording()
+        val intent = Intent(this, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        runCatching { startActivity(intent) }
     }
 
     private fun handleMiddleMove(
@@ -362,10 +367,11 @@ class BubbleService : Service() {
     }
 
     private fun currentBubbleWidth(): Int {
+        val view = bubbleView ?: return BubbleView.PILL_PX
         val app = applicationContext as SrizonApp
         val state = app.recordingCoordinator.state.value
         return if (state is RecordingState.Recording || state is RecordingState.Transcribing) {
-            BubbleView.WIDE_PX
+            view.activeWidth()
         } else {
             BubbleView.PILL_PX
         }
@@ -443,9 +449,9 @@ class BubbleService : Service() {
         app.recordingCoordinator.startRecording()
     }
 
-    private fun stopAndTranscribe() {
+    private fun stopAndTranscribe(translate: Boolean = false) {
         val app = applicationContext as SrizonApp
-        app.recordingCoordinator.stopAndTranscribe()
+        app.recordingCoordinator.stopAndTranscribe(translate = translate)
     }
 
     private fun cancelRecording() {
@@ -486,7 +492,7 @@ class BubbleService : Service() {
     }
 
     /** When the bubble widens (idle → recording/transcribing) and is sitting on the
-     * right half of the screen, shift its X position left by [BubbleView.WIDTH_DELTA]
+     * right half of the screen, shift its X position left by [BubbleView.widthDelta]
      * so the wider pill grows to the *left* instead of running off the right edge.
      * Reverses the shift on the way back to idle.
      *
@@ -504,14 +510,16 @@ class BubbleService : Service() {
         if (!wasWide && isWide) {
             val screenW = windowManager.currentWindowMetrics.bounds.width()
             val centerX = params.x + BubbleView.PILL_PX / 2
+            val delta = view.widthDelta()
             if (centerX > screenW / 2) {
-                params.x -= BubbleView.WIDTH_DELTA
-                view.dragState.startX -= BubbleView.WIDTH_DELTA
+                params.x -= delta
+                view.dragState.startX -= delta
                 shiftedLeftForWideState = true
             }
         } else if (wasWide && !isWide && shiftedLeftForWideState) {
-            params.x += BubbleView.WIDTH_DELTA
-            view.dragState.startX += BubbleView.WIDTH_DELTA
+            val delta = view.widthDelta()
+            params.x += delta
+            view.dragState.startX += delta
             shiftedLeftForWideState = false
         }
         runCatching { windowManager.updateViewLayout(view, params) }
@@ -524,7 +532,7 @@ class BubbleService : Service() {
         private const val CANCEL_ZONE_FRACTION = 0.12f
         private const val EDGE_GAP_DP = 12
         private const val SNAP_START_DELAY_MS = 300L
-        private const val SNAP_ANIMATION_MS = 600f
+        private const val SNAP_ANIMATION_MS = 250f
         private const val FRAME_INTERVAL_MS = 16L
         private const val PTT_ACTIVATION_DELAY_MS = 400L
     }

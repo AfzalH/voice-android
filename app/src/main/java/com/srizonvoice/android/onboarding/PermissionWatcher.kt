@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
-import android.os.Build
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import androidx.core.content.ContextCompat
@@ -17,7 +16,6 @@ import com.srizonvoice.android.insertion.SrizonAccessibilityService
  */
 data class PermissionsSnapshot(
     val microphone: Boolean,
-    val notifications: Boolean,
     val overlay: Boolean,
     val accessibility: Boolean,
 )
@@ -26,7 +24,6 @@ class PermissionWatcher(private val context: Context) {
 
     fun snapshot(): PermissionsSnapshot = PermissionsSnapshot(
         microphone = hasMicrophone(),
-        notifications = hasNotifications(),
         overlay = hasOverlay(),
         accessibility = hasAccessibility(),
     )
@@ -34,14 +31,6 @@ class PermissionWatcher(private val context: Context) {
     fun hasMicrophone(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
-
-    fun hasNotifications(): Boolean {
-        // POST_NOTIFICATIONS is a runtime permission only on API 33+. Below that,
-        // notifications are granted by the OS by default.
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
-        return ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
-    }
 
     fun hasOverlay(): Boolean = Settings.canDrawOverlays(context)
 

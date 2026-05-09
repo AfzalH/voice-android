@@ -64,8 +64,15 @@ class RecordingCoordinator(
         }
     }
 
-    /** Stop, encode, transcribe, optionally post-process, and emit a transcript event. */
-    fun stopAndTranscribe(sourcePackage: String? = null) {
+    /**
+     * Stop, encode, transcribe, optionally post-process, and emit a transcript event.
+     *
+     * @param translate when true *and* the user's configured target language differs
+     *  from the dictation language, the LLM cleanup step is replaced with a
+     *  translation prompt that produces text in the target language. The bubble's
+     *  Translate (🌐) button passes true; Done (✓) and PTT release pass false.
+     */
+    fun stopAndTranscribe(sourcePackage: String? = null, translate: Boolean = false) {
         if (_state.value !is RecordingState.Recording) {
             engine.cancel()
             return
@@ -82,7 +89,7 @@ class RecordingCoordinator(
         transcribeJob?.cancel()
         transcribeJob = scope.launch {
             try {
-                val text = transcribePipeline(capture.pcm, sourcePackage)
+                val text = transcribePipeline(capture.pcm, sourcePackage, translate)
                 if (text.isNotBlank()) {
                     _transcripts.tryEmit(TranscriptEvent(text, sourcePackage))
                 }
@@ -102,7 +109,11 @@ class RecordingCoordinator(
         _state.value = RecordingState.Idle
     }
 
-    private suspend fun transcribePipeline(pcm: ByteArray, sourcePackage: String?): String {
+    private suspend fun transcribePipeline(
+        pcm: ByteArray,
+        sourcePackage: String?,
+        translate: Boolean,
+    ): String {
         val wav = withContext(Dispatchers.Default) { WavEncoder.encode(pcm) }
         val current = settings.current()
         val groqKey = keys.groqApiKey
@@ -119,7 +130,19 @@ class RecordingCoordinator(
         if (!current.postProcessingEnabled) return rawTranscript
 
         val context = sourcePackage?.let { " Note: The dictation was triggered in the context of: $it." }.orEmpty()
-        val systemPrompt = current.postProcessingPrompt + context
+        // Translation only fires when the caller explicitly asked for it (e.g.
+        // the user tapped the bubble's Translate button). The settings toggle
+        // controls visibility of that button — not auto-translation.
+        val translateActive = translate && current.targetLanguage != current.language
+        val basePrompt = if (translateActive) {
+            buildTranslationPrompt(
+                sourceDisplay = current.language.displayName,
+                targetDisplay = current.targetLanguage.displayName,
+            )
+        } else {
+            current.postProcessingPrompt
+        }
+        val systemPrompt = basePrompt + context
 
         return if (current.useGemini) {
             val key = keys.geminiApiKey
@@ -138,6 +161,23 @@ class RecordingCoordinator(
             }.getOrElse { rawTranscript }
         }
     }
+
+    /**
+     * Prompt used when the user has enabled translation and picked a target
+     * language different from the dictation language. Replaces the cleanup
+     * prompt entirely — the cleanup-only prompt's "preserve casing for short
+     * queries" rules don't make sense once you're translating into a different
+     * language.
+     */
+    private fun buildTranslationPrompt(sourceDisplay: String, targetDisplay: String): String =
+        "You are a translation assistant. The user message is a raw transcript " +
+            "from a speech-to-text system, originally spoken in $sourceDisplay. " +
+            "Clean it up first — fix obvious recognition errors, drop filler words " +
+            "like 'um' / 'uh' / repeated words, restore reasonable punctuation. " +
+            "Then translate the cleaned result into $targetDisplay. " +
+            "Return ONLY the cleaned, translated text — no commentary, no " +
+            "original-language version, no quotes around the output, no " +
+            "explanations."
 
     private fun emitError(message: String) {
         _state.value = RecordingState.Error(message)
