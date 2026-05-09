@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SrizonVoice</string>
+    <string name="tile_label">Dictate</string>
+    <string name="accessibility_service_label">SrizonVoice text insertion</string>
+    <string name="accessibility_service_description">Lets SrizonVoice insert dictated text into the focused text field of any app.</string>
+    <string name="onboarding_title">Set up SrizonVoice</string>
+
+    <string name="bubble_notification_title">Dictation ready</string>
+    <string name="bubble_notification_text">Tap and hold the bubble to dictate.</string>
+    <string name="recording_notification_text">Recording…</string>
+
+    <string name="error_invalid_api_key">Invalid API key. Check Settings.</string>
+    <string name="error_audio_format">Could not configure audio capture.</string>
+    <string name="error_transcription_failed">Transcription failed.</string>
+    <string name="error_invalid_response">Invalid network response.</string>
+    <string name="error_invalid_url">Invalid API URL.</string>
+    <string name="error_insertion_failed">Unable to insert text in current app.</string>
+    <string name="info_copied_to_clipboard">Transcript copied to clipboard.</string>
+</resources>
