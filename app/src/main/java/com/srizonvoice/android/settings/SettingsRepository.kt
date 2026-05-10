@@ -42,6 +42,9 @@ class SettingsRepository(private val context: Context) {
             handsfreeMaxMinutes = prefs[Keys.HANDSFREE_MAX_MINUTES] ?: 1,
             triggerMode = TriggerMode.fromRaw(prefs[Keys.TRIGGER_MODE]),
             bubbleOpacity = (prefs[Keys.BUBBLE_OPACITY] ?: DEFAULT_BUBBLE_OPACITY).coerceIn(MIN_OPACITY, 1f),
+            showBubbleOnlyWhenKeyboard = prefs[Keys.SHOW_BUBBLE_ONLY_WHEN_KEYBOARD] ?: true,
+            bubbleX = prefs[Keys.BUBBLE_X] ?: -1,
+            bubbleY = prefs[Keys.BUBBLE_Y] ?: -1,
             onboardingComplete = prefs[Keys.ONBOARDING_COMPLETE] ?: false,
             setupBannerDismissed = prefs[Keys.SETUP_BANNER_DISMISSED] ?: false,
         )
@@ -113,6 +116,15 @@ class SettingsRepository(private val context: Context) {
         it[Keys.BUBBLE_OPACITY] = opacity.coerceIn(MIN_OPACITY, 1f)
     }
 
+    suspend fun setShowBubbleOnlyWhenKeyboard(only: Boolean) = edit {
+        it[Keys.SHOW_BUBBLE_ONLY_WHEN_KEYBOARD] = only
+    }
+
+    suspend fun setBubblePosition(x: Int, y: Int) = edit {
+        it[Keys.BUBBLE_X] = x
+        it[Keys.BUBBLE_Y] = y
+    }
+
     suspend fun setOnboardingComplete(complete: Boolean) = edit {
         it[Keys.ONBOARDING_COMPLETE] = complete
     }
@@ -152,6 +164,9 @@ class SettingsRepository(private val context: Context) {
         val HANDSFREE_MAX_MINUTES = intPreferencesKey("app.handsfreeMaxMinutes")
         val TRIGGER_MODE = stringPreferencesKey("trigger.mode")
         val BUBBLE_OPACITY = floatPreferencesKey("bubble.opacity")
+        val SHOW_BUBBLE_ONLY_WHEN_KEYBOARD = booleanPreferencesKey("bubble.showOnlyWhenKeyboard")
+        val BUBBLE_X = intPreferencesKey("bubble.x")
+        val BUBBLE_Y = intPreferencesKey("bubble.y")
         val ONBOARDING_COMPLETE = booleanPreferencesKey("app.onboardingComplete")
         val SETUP_BANNER_DISMISSED = booleanPreferencesKey("app.setupBannerDismissed")
     }
@@ -178,6 +193,10 @@ data class SettingsState(
     val handsfreeMaxMinutes: Int,
     val triggerMode: TriggerMode,
     val bubbleOpacity: Float,
+    val showBubbleOnlyWhenKeyboard: Boolean,
+    /** Persisted bubble window position. -1 means "never set, use default". */
+    val bubbleX: Int,
+    val bubbleY: Int,
     val onboardingComplete: Boolean,
     val setupBannerDismissed: Boolean,
 )

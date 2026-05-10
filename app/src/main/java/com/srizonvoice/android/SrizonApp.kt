@@ -8,6 +8,7 @@ import android.os.Build
 import com.srizonvoice.android.recording.RecordingCoordinator
 import com.srizonvoice.android.settings.SecureKeyStore
 import com.srizonvoice.android.settings.SettingsRepository
+import kotlinx.coroutines.flow.MutableStateFlow
 
 class SrizonApp : Application() {
 
@@ -20,6 +21,13 @@ class SrizonApp : Application() {
             keys = secureKeyStore,
         )
     }
+
+    /** Reactive "is any system IME currently visible" — driven by
+     *  [com.srizonvoice.android.insertion.SrizonAccessibilityService] looking
+     *  for an `AccessibilityWindowInfo.TYPE_INPUT_METHOD` window. The bubble
+     *  service uses this (gated on a settings toggle) to hide the floating
+     *  bubble when the user isn't actively in a text field. */
+    val imeOpen = MutableStateFlow(false)
 
     override fun onCreate() {
         super.onCreate()

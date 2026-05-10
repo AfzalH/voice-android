@@ -58,6 +58,14 @@ class BubbleService : Service() {
     private var errorJob: Job? = null
     private var modeJob: Job? = null
     private var snapJob: Job? = null
+    private var imeJob: Job? = null
+
+    /** Cached "show bubble only when keyboard is open" preference. */
+    @Volatile
+    private var onlyWhenKeyboard: Boolean = false
+
+    /** True when the bubble view is currently attached to [windowManager]. */
+    private var bubbleAttached: Boolean = false
 
     /** Held while the user is pressing in PTT mode — fires after the activation
      * delay to actually begin recording. Canceled if the user moves before then. */
@@ -99,6 +107,28 @@ class BubbleService : Service() {
         addBubble()
         observeCoordinator()
         observeRecordingMode()
+        restoreSavedPosition()
+    }
+
+    private fun restoreSavedPosition() {
+        val app = applicationContext as SrizonApp
+        scope.launch {
+            val s = app.settingsRepository.current()
+            if (s.bubbleX < 0 || s.bubbleY < 0) return@launch
+            val view = bubbleView ?: return@launch
+            val params = layoutParams ?: return@launch
+            params.x = s.bubbleX
+            params.y = s.bubbleY
+            view.dragState.startX = s.bubbleX
+            view.dragState.startY = s.bubbleY
+            runCatching { windowManager.updateViewLayout(view, params) }
+        }
+    }
+
+    private fun persistPosition() {
+        val params = layoutParams ?: return
+        val app = applicationContext as SrizonApp
+        scope.launch { app.settingsRepository.setBubblePosition(params.x, params.y) }
     }
 
     private fun observeRecordingMode() {
@@ -108,12 +138,46 @@ class BubbleService : Service() {
             app.settingsRepository.state.collect { settings ->
                 currentMode = settings.recordingMode
                 idleOpacity = settings.bubbleOpacity
+                onlyWhenKeyboard = settings.showBubbleOnlyWhenKeyboard
                 bubbleView?.setRecordingMode(settings.recordingMode)
                 bubbleView?.setTranslateButtonShown(
                     settings.postProcessingEnabled && settings.translationEnabled,
                 )
                 applyOpacity()
+                applyVisibility()
             }
+        }
+        // Also re-evaluate visibility when the IME shows/hides.
+        imeJob?.cancel()
+        imeJob = scope.launch {
+            app.imeOpen.collect { applyVisibility() }
+        }
+    }
+
+    /**
+     * Adds or removes the bubble view from the [WindowManager] based on:
+     *  - the user's "only when keyboard" preference,
+     *  - whether a system IME is currently visible,
+     *  - whether a recording / transcribe is in flight (we never hide a
+     *    wide pill mid-flow — would feel like the recording vanished).
+     *
+     * `View.GONE` on a WindowManager-managed view doesn't actually remove
+     * the floating overlay — the system keeps the window. Hard add/remove
+     * is the only way to truly hide it.
+     */
+    private fun applyVisibility() {
+        val view = bubbleView ?: return
+        val params = layoutParams ?: return
+        val app = applicationContext as SrizonApp
+        val state = app.recordingCoordinator.state.value
+        val isWide = state is RecordingState.Recording || state is RecordingState.Transcribing
+        val shouldShow = !onlyWhenKeyboard || app.imeOpen.value || isWide
+        if (shouldShow && !bubbleAttached) {
+            runCatching { windowManager.addView(view, params) }
+            bubbleAttached = true
+        } else if (!shouldShow && bubbleAttached) {
+            runCatching { windowManager.removeView(view) }
+            bubbleAttached = false
         }
     }
 
@@ -141,7 +205,10 @@ class BubbleService : Service() {
     }
 
     override fun onDestroy() {
-        bubbleView?.let { runCatching { windowManager.removeView(it) } }
+        if (bubbleAttached) {
+            bubbleView?.let { runCatching { windowManager.removeView(it) } }
+            bubbleAttached = false
+        }
         bubbleView = null
         scope.cancel()
         super.onDestroy()
@@ -181,6 +248,7 @@ class BubbleService : Service() {
             stopSelf()
             return
         }
+        val (defaultX, defaultY) = defaultBubblePosition()
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -189,8 +257,8 @@ class BubbleService : Service() {
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 32
-            y = 200
+            x = defaultX
+            y = defaultY
         }
 
         val view = BubbleView(this)
@@ -198,6 +266,18 @@ class BubbleService : Service() {
         layoutParams = params
         bubbleView = view
         windowManager.addView(view, params)
+        bubbleAttached = true
+    }
+
+    /** First-launch position: hugging the right edge with the standard
+     *  edge gap, vertically centered. Used until the user drags the bubble
+     *  somewhere else, after which the saved position takes over. */
+    private fun defaultBubblePosition(): Pair<Int, Int> {
+        val bounds = windowManager.currentWindowMetrics.bounds
+        val edgeGapPx = (EDGE_GAP_DP * resources.displayMetrics.density).toInt()
+        val x = (bounds.width() - BubbleView.PILL_PX - edgeGapPx).coerceAtLeast(0)
+        val y = ((bounds.height() - BubbleView.PILL_PX) / 2).coerceAtLeast(0)
+        return x to y
     }
 
     private fun handleTouch(event: MotionEvent): Boolean {
@@ -433,6 +513,8 @@ class BubbleService : Service() {
             if (t >= 1f) break
             delay(FRAME_INTERVAL_MS)
         }
+        // Settled — remember where the user wants the bubble.
+        persistPosition()
     }
 
     private fun easeOutCubic(t: Float): Float {
@@ -483,6 +565,7 @@ class BubbleService : Service() {
                 previous = state
                 bubbleView?.render(state)
                 applyOpacity()
+                applyVisibility()
             }
         }
         errorJob?.cancel()

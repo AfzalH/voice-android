@@ -340,6 +340,13 @@ private fun DictationTab(state: SettingsState, settings: SettingsRepository) {
                 onChange = { scope.launch { settings.setBubbleOpacity(it) } },
             )
         }
+        item {
+            ToggleRow(
+                label = "Show bubble only when the keyboard is open",
+                checked = state.showBubbleOnlyWhenKeyboard,
+                onCheckedChange = { scope.launch { settings.setShowBubbleOnlyWhenKeyboard(it) } },
+            )
+        }
     }
 }
 
