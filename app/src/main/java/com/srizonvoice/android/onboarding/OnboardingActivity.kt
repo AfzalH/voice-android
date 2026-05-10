@@ -117,6 +117,9 @@ class OnboardingActivity : ComponentActivity() {
                             LaunchedEffect(Unit) {
                                 if (!finishedSnapshot.value) {
                                     app.settingsRepository.setOnboardingComplete(true)
+                                    // Re-show the success banner — last dismissal applied to
+                                    // the previous setup run, not this one.
+                                    app.settingsRepository.setSetupBannerDismissed(false)
                                     finishedSnapshot.value = true
                                 }
                             }

@@ -138,6 +138,7 @@ class RecordingCoordinator(
             buildTranslationPrompt(
                 sourceDisplay = current.language.displayName,
                 targetDisplay = current.targetLanguage.displayName,
+                includeSource = current.translationIncludeSource,
             )
         } else {
             current.postProcessingPrompt
@@ -168,16 +169,36 @@ class RecordingCoordinator(
      * prompt entirely — the cleanup-only prompt's "preserve casing for short
      * queries" rules don't make sense once you're translating into a different
      * language.
+     *
+     * Two output shapes, controlled by `includeSource`:
+     *  - true  → "<cleaned source> — <translation>" (em-dash separator).
+     *  - false → "<translation>" (translation only).
      */
-    private fun buildTranslationPrompt(sourceDisplay: String, targetDisplay: String): String =
-        "You are a translation assistant. The user message is a raw transcript " +
-            "from a speech-to-text system, originally spoken in $sourceDisplay. " +
-            "Clean it up first — fix obvious recognition errors, drop filler words " +
+    private fun buildTranslationPrompt(
+        sourceDisplay: String,
+        targetDisplay: String,
+        includeSource: Boolean,
+    ): String {
+        val cleanupClause = "You are a translation assistant. The user message is a raw " +
+            "transcript from a speech-to-text system, originally spoken in $sourceDisplay. " +
+            "First, clean it up — fix obvious recognition errors, drop filler words " +
             "like 'um' / 'uh' / repeated words, restore reasonable punctuation. " +
-            "Then translate the cleaned result into $targetDisplay. " +
-            "Return ONLY the cleaned, translated text — no commentary, no " +
-            "original-language version, no quotes around the output, no " +
-            "explanations."
+            "Then translate the cleaned $sourceDisplay text into $targetDisplay. "
+        return if (includeSource) {
+            cleanupClause +
+                "Output exactly: the cleaned $sourceDisplay text, followed by a " +
+                "space, an em-dash (—), another space, then the $targetDisplay " +
+                "translation. Example format: 'Cleaned source — Translated text'. " +
+                "Return ONLY this combined string — no labels like 'Source:' or " +
+                "'Translation:', no quotes around the output, no commentary, no " +
+                "explanations."
+        } else {
+            cleanupClause +
+                "Return ONLY the cleaned, translated text — no commentary, no " +
+                "original-language version, no quotes around the output, no " +
+                "explanations."
+        }
+    }
 
     private fun emitError(message: String) {
         _state.value = RecordingState.Error(message)

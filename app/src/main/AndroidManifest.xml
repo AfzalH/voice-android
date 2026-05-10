@@ -36,7 +36,8 @@
             android:exported="false"
             android:label="@string/onboarding_title"
             android:launchMode="singleTask"
-            android:theme="@style/Theme.SrizonVoice" />
+            android:theme="@style/Theme.SrizonVoice"
+            android:windowSoftInputMode="adjustResize" />
 
         <service
             android:name=".trigger.bubble.BubbleService"

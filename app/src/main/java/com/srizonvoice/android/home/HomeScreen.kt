@@ -144,12 +144,17 @@ private fun HomeContent(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    val scope = rememberCoroutineScope()
     Column(
         modifier = Modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.systemBars),
     ) {
-        Header(perms = perms)
+        Header(
+            perms = perms,
+            successBannerDismissed = current.setupBannerDismissed,
+            onDismissSuccessBanner = { scope.launch { settings.setSetupBannerDismissed(true) } },
+        )
         TabBar(selected = selectedTab, onSelect = { selectedTab = it })
         when (selectedTab) {
             0 -> DictationTab(current, settings)
@@ -166,7 +171,11 @@ private fun HomeContent(
 // ── Header ─────────────────────────────────────────────────────────────────
 
 @Composable
-private fun Header(perms: PermissionsSnapshot) {
+private fun Header(
+    perms: PermissionsSnapshot,
+    successBannerDismissed: Boolean,
+    onDismissSuccessBanner: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -188,40 +197,75 @@ private fun Header(perms: PermissionsSnapshot) {
                 fontWeight = FontWeight.SemiBold,
             )
         }
-        StatusBanner(perms = perms)
+        StatusBanner(
+            perms = perms,
+            successBannerDismissed = successBannerDismissed,
+            onDismissSuccessBanner = onDismissSuccessBanner,
+        )
     }
 }
 
 @Composable
-private fun StatusBanner(perms: PermissionsSnapshot) {
+private fun StatusBanner(
+    perms: PermissionsSnapshot,
+    successBannerDismissed: Boolean,
+    onDismissSuccessBanner: () -> Unit,
+) {
     val allGranted = perms.microphone && perms.overlay && perms.accessibility
-    val (bg, fg, message) = if (allGranted) {
-        Triple(
-            SUCCESS_BG,
-            SUCCESS_FG,
-            "✅  Setup complete! Tap the floating bubble to start dictating.",
-        )
-    } else {
-        val missing = listOfNotNull(
-            "Microphone".takeIf { !perms.microphone },
-            "Display over other apps".takeIf { !perms.overlay },
-            "Accessibility".takeIf { !perms.accessibility },
-        )
-        Triple(
-            WARNING_BG,
-            WARNING_FG,
-            "⚠️  Setup needs attention. Open the Permissions tab to grant: ${missing.joinToString()}.",
-        )
+    when {
+        allGranted && !successBannerDismissed -> SuccessBanner(onDismiss = onDismissSuccessBanner)
+        !allGranted -> WarningBanner(perms = perms)
+        // allGranted && dismissed → render nothing.
     }
+}
+
+@Composable
+private fun SuccessBanner(onDismiss: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        color = bg,
+        color = SUCCESS_BG,
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "✅  Setup complete! Tap the floating bubble to start dictating.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = SUCCESS_FG,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 10.dp),
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Dismiss",
+                    tint = SUCCESS_FG,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WarningBanner(perms: PermissionsSnapshot) {
+    val missing = listOfNotNull(
+        "Microphone".takeIf { !perms.microphone },
+        "Display over other apps".takeIf { !perms.overlay },
+        "Accessibility".takeIf { !perms.accessibility },
+    )
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = WARNING_BG,
     ) {
         Text(
-            text = message,
+            text = "⚠️  Setup needs attention. Open the Permissions tab to grant: ${missing.joinToString()}.",
             style = MaterialTheme.typography.bodyMedium,
-            color = fg,
+            color = WARNING_FG,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
         )
     }
@@ -355,6 +399,13 @@ private fun AITab(state: SettingsState, settings: SettingsRepository, keys: Secu
                     recents = state.recentTargetLanguages,
                     sourceLanguage = state.language,
                     onSelect = { scope.launch { settings.setTargetLanguage(it) } },
+                )
+            }
+            item {
+                ToggleRow(
+                    label = "Include cleaned original alongside the translation",
+                    checked = state.translationIncludeSource,
+                    onCheckedChange = { scope.launch { settings.setTranslationIncludeSource(it) } },
                 )
             }
         }
@@ -574,7 +625,7 @@ private fun ToggleRow(
         Row(
             modifier = Modifier.fillMaxWidth().padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
@@ -687,10 +738,12 @@ private fun PermissionsCard(
 
 @Composable
 private fun PermLine(label: String, granted: Boolean, action: (@Composable () -> Unit)?) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         if (granted) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary)
         else Icon(Icons.Filled.Close, null, tint = MaterialTheme.colorScheme.error)
-        Spacer(Modifier.size(12.dp))
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         action?.invoke()
     }

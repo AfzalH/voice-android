@@ -37,11 +37,13 @@ class SettingsRepository(private val context: Context) {
             translationEnabled = prefs[Keys.TRANSLATION_ENABLED] ?: false,
             targetLanguage = LanguageOption.fromCode(prefs[Keys.TARGET_LANGUAGE]),
             recentTargetLanguages = decodeRecent(prefs[Keys.RECENT_TARGET_LANGUAGES]),
+            translationIncludeSource = prefs[Keys.TRANSLATION_INCLUDE_SOURCE] ?: false,
             recordingMode = RecordingMode.fromRaw(prefs[Keys.RECORDING_MODE]),
             handsfreeMaxMinutes = prefs[Keys.HANDSFREE_MAX_MINUTES] ?: 1,
             triggerMode = TriggerMode.fromRaw(prefs[Keys.TRIGGER_MODE]),
             bubbleOpacity = (prefs[Keys.BUBBLE_OPACITY] ?: DEFAULT_BUBBLE_OPACITY).coerceIn(MIN_OPACITY, 1f),
             onboardingComplete = prefs[Keys.ONBOARDING_COMPLETE] ?: false,
+            setupBannerDismissed = prefs[Keys.SETUP_BANNER_DISMISSED] ?: false,
         )
     }
 
@@ -79,6 +81,10 @@ class SettingsRepository(private val context: Context) {
         it[Keys.TRANSLATION_ENABLED] = enabled
     }
 
+    suspend fun setTranslationIncludeSource(include: Boolean) = edit {
+        it[Keys.TRANSLATION_INCLUDE_SOURCE] = include
+    }
+
     suspend fun setTargetLanguage(language: LanguageOption) = edit {
         // Stack semantics: drop the new pick, prepend the previous selection,
         // cap at MAX_RECENT — same shape as `setLanguage` for the dictation list.
@@ -111,6 +117,10 @@ class SettingsRepository(private val context: Context) {
         it[Keys.ONBOARDING_COMPLETE] = complete
     }
 
+    suspend fun setSetupBannerDismissed(dismissed: Boolean) = edit {
+        it[Keys.SETUP_BANNER_DISMISSED] = dismissed
+    }
+
     private suspend fun edit(transform: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         context.dataStore.edit { prefs -> transform(prefs) }
     }
@@ -137,11 +147,13 @@ class SettingsRepository(private val context: Context) {
         val TRANSLATION_ENABLED = booleanPreferencesKey("llm.translationEnabled")
         val TARGET_LANGUAGE = stringPreferencesKey("llm.targetLanguage")
         val RECENT_TARGET_LANGUAGES = stringPreferencesKey("llm.recentTargetLanguages")
+        val TRANSLATION_INCLUDE_SOURCE = booleanPreferencesKey("llm.translationIncludeSource")
         val RECORDING_MODE = stringPreferencesKey("app.recordingMode")
         val HANDSFREE_MAX_MINUTES = intPreferencesKey("app.handsfreeMaxMinutes")
         val TRIGGER_MODE = stringPreferencesKey("trigger.mode")
         val BUBBLE_OPACITY = floatPreferencesKey("bubble.opacity")
         val ONBOARDING_COMPLETE = booleanPreferencesKey("app.onboardingComplete")
+        val SETUP_BANNER_DISMISSED = booleanPreferencesKey("app.setupBannerDismissed")
     }
 
     companion object {
@@ -161,9 +173,11 @@ data class SettingsState(
     val translationEnabled: Boolean,
     val targetLanguage: LanguageOption,
     val recentTargetLanguages: List<LanguageOption>,
+    val translationIncludeSource: Boolean,
     val recordingMode: RecordingMode,
     val handsfreeMaxMinutes: Int,
     val triggerMode: TriggerMode,
     val bubbleOpacity: Float,
     val onboardingComplete: Boolean,
+    val setupBannerDismissed: Boolean,
 )
