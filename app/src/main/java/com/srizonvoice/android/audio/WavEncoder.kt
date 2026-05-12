@@ -6,8 +6,8 @@ import java.nio.ByteOrder
 
 /**
  * Builds a 44-byte little-endian WAV header + raw PCM payload, matching the
- * macOS `buildWAVFile` (Services.swift:213-239). The Groq Whisper endpoint
- * accepts this verbatim — no resampling needed because we capture at 16 kHz.
+ * macOS `buildWAVFile` (Services.swift:213-239). Gemini accepts the WAV bytes
+ * directly, and no resampling is needed because we capture at 16 kHz.
  */
 object WavEncoder {
 

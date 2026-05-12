@@ -14,7 +14,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -22,17 +21,14 @@ import com.srizonvoice.android.MainActivity
 import com.srizonvoice.android.SrizonApp
 import com.srizonvoice.android.ensureBubbleRunning
 import com.srizonvoice.android.api.GeminiClient
-import com.srizonvoice.android.api.GroqClient
 import com.srizonvoice.android.onboarding.steps.AccessibilityStep
 import com.srizonvoice.android.onboarding.steps.DoneStep
 import com.srizonvoice.android.onboarding.steps.GeminiKeyStep
-import com.srizonvoice.android.onboarding.steps.GroqKeyStep
 import com.srizonvoice.android.onboarding.steps.MicrophoneStep
 import com.srizonvoice.android.onboarding.steps.OverlayStep
 import com.srizonvoice.android.onboarding.steps.WelcomeStep
 import com.srizonvoice.android.ui.SrizonTheme
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
 
 class OnboardingActivity : ComponentActivity() {
 
@@ -55,7 +51,6 @@ class OnboardingActivity : ComponentActivity() {
         refresh()
 
         val app = application as SrizonApp
-        val groq = GroqClient()
         val gemini = GeminiClient()
 
         setContent {
@@ -66,25 +61,14 @@ class OnboardingActivity : ComponentActivity() {
 
                     NavHost(navController = nav, startDestination = "welcome") {
                         composable("welcome") {
-                            WelcomeStep(onContinue = { nav.navigate("groq") })
-                        }
-                        composable("groq") {
-                            GroqKeyStep(
-                                initialValue = app.secureKeyStore.groqApiKey,
-                                onValidate = { key -> groq.validateKey(key) },
-                                onContinue = { key ->
-                                    app.secureKeyStore.groqApiKey = key
-                                    nav.navigate("gemini")
-                                },
-                            )
+                            WelcomeStep(onContinue = { nav.navigate("gemini") })
                         }
                         composable("gemini") {
                             GeminiKeyStep(
                                 initialKey = app.secureKeyStore.geminiApiKey,
                                 onValidate = { key -> gemini.validateKey(key) },
-                                onContinue = { useGemini, key ->
-                                    if (useGemini) app.secureKeyStore.geminiApiKey = key
-                                    lifecycleScope.launch { app.settingsRepository.setUseGemini(useGemini) }
+                                onContinue = { key ->
+                                    app.secureKeyStore.geminiApiKey = key
                                     nav.navigate("microphone")
                                 },
                             )

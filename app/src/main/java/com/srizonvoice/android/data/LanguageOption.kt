@@ -1,7 +1,7 @@
 package com.srizonvoice.android.data
 
 /**
- * 107 ISO-639-1 languages mirroring macOS `Sources/SrizonVoice/Models.swift:6-214`.
+ * Translation language list mirroring macOS `Sources/SrizonVoice/Models.swift:6-214`.
  * Code ordering and emoji flags preserved for cross-platform parity.
  */
 enum class LanguageOption(val code: String, val displayName: String) {
@@ -106,6 +106,9 @@ enum class LanguageOption(val code: String, val displayName: String) {
     YIDDISH("yi", "🇮🇱 Yiddish"),
     YORUBA("yo", "🇳🇬 Yoruba"),
     ;
+
+    val plainName: String
+        get() = displayName.substringAfter(' ', code)
 
     companion object {
         val Default: LanguageOption = ENGLISH

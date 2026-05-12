@@ -1,6 +1,6 @@
 package com.srizonvoice.android.recording
 
-/** Sealed states observed by the bubble, tile, and tracer-bullet UI. */
+/** Sealed states observed by the bubble and Quick Settings tile. */
 sealed interface RecordingState {
     data object Idle : RecordingState
     data class Recording(val visualLevel: Float) : RecordingState

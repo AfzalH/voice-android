@@ -9,11 +9,10 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.srizonvoice.android.data.DEFAULT_POST_PROCESSING_PROMPT
+import com.srizonvoice.android.data.DEFAULT_CUSTOM_PROMPT
 import com.srizonvoice.android.data.LanguageOption
 import com.srizonvoice.android.data.RecordingMode
-import com.srizonvoice.android.data.TranscriptionModel
-import com.srizonvoice.android.data.TriggerMode
+import com.srizonvoice.android.data.TranscriptionOutputMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -28,19 +27,22 @@ class SettingsRepository(private val context: Context) {
 
     val state: Flow<SettingsState> = context.dataStore.data.map { prefs ->
         SettingsState(
-            language = LanguageOption.fromCode(prefs[Keys.LANGUAGE]),
-            recentLanguages = decodeRecent(prefs[Keys.RECENT_LANGUAGES]),
-            transcriptionModel = TranscriptionModel.fromId(prefs[Keys.TRANSCRIPTION_MODEL]),
-            postProcessingEnabled = prefs[Keys.POST_PROCESSING_ENABLED] ?: true,
-            useGemini = prefs[Keys.USE_GEMINI] ?: false,
-            postProcessingPrompt = prefs[Keys.POST_PROCESSING_PROMPT] ?: DEFAULT_POST_PROCESSING_PROMPT,
-            translationEnabled = prefs[Keys.TRANSLATION_ENABLED] ?: false,
-            targetLanguage = LanguageOption.fromCode(prefs[Keys.TARGET_LANGUAGE]),
-            recentTargetLanguages = decodeRecent(prefs[Keys.RECENT_TARGET_LANGUAGES]),
-            translationIncludeSource = prefs[Keys.TRANSLATION_INCLUDE_SOURCE] ?: false,
+            dictationOutputMode = normalizeDictationOutputMode(
+                TranscriptionOutputMode.fromRaw(prefs[Keys.DICTATION_OUTPUT_MODE]),
+            ),
+            customPrompt = (prefs[Keys.CUSTOM_PROMPT] ?: DEFAULT_CUSTOM_PROMPT)
+                .ifBlank { DEFAULT_CUSTOM_PROMPT },
+            showTranslateButton = prefs[Keys.SHOW_TRANSLATE_BUTTON]
+                ?: prefs[Keys.LEGACY_SHOW_TRANSLATE_BUTTON]
+                ?: false,
+            translationOutputMode = readTranslationOutputMode(prefs),
+            translationLanguage = LanguageOption.fromCode(
+                prefs[Keys.TRANSLATION_LANGUAGE]
+                    ?: prefs[Keys.LEGACY_TRANSLATION_LANGUAGE]
+                    ?: prefs[Keys.LEGACY_TARGET_LANGUAGE],
+            ),
             recordingMode = RecordingMode.fromRaw(prefs[Keys.RECORDING_MODE]),
-            handsfreeMaxMinutes = prefs[Keys.HANDSFREE_MAX_MINUTES] ?: 1,
-            triggerMode = TriggerMode.fromRaw(prefs[Keys.TRIGGER_MODE]),
+            handsfreeMaxSeconds = readHandsfreeMaxSeconds(prefs),
             bubbleOpacity = (prefs[Keys.BUBBLE_OPACITY] ?: DEFAULT_BUBBLE_OPACITY).coerceIn(MIN_OPACITY, 1f),
             showBubbleOnlyWhenKeyboard = prefs[Keys.SHOW_BUBBLE_ONLY_WHEN_KEYBOARD] ?: true,
             bubbleX = prefs[Keys.BUBBLE_X] ?: -1,
@@ -52,64 +54,32 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun current(): SettingsState = state.first()
 
-    suspend fun setLanguage(language: LanguageOption) = edit {
-        // Stack semantics from macOS `AppModel.swift:85-96`: drop the new language
-        // from the recent list, prepend the previous one, cap at 3.
-        val previous = LanguageOption.fromCode(it[Keys.LANGUAGE])
-        val recent = decodeRecent(it[Keys.RECENT_LANGUAGES]).filterNot { lang -> lang == language }
-        val updated = (listOf(previous) + recent)
-            .filterNot { lang -> lang == language }
-            .take(MAX_RECENT)
-        it[Keys.LANGUAGE] = language.code
-        it[Keys.RECENT_LANGUAGES] = encodeRecent(updated)
+    suspend fun setDictationOutputMode(mode: TranscriptionOutputMode) = edit {
+        it[Keys.DICTATION_OUTPUT_MODE] = normalizeDictationOutputMode(mode).rawValue
     }
 
-    suspend fun setTranscriptionModel(model: TranscriptionModel) = edit {
-        it[Keys.TRANSCRIPTION_MODEL] = model.id
+    suspend fun setCustomPrompt(prompt: String) = edit {
+        it[Keys.CUSTOM_PROMPT] = prompt.ifBlank { DEFAULT_CUSTOM_PROMPT }
     }
 
-    suspend fun setPostProcessingEnabled(enabled: Boolean) = edit {
-        it[Keys.POST_PROCESSING_ENABLED] = enabled
+    suspend fun setShowTranslateButton(show: Boolean) = edit {
+        it[Keys.SHOW_TRANSLATE_BUTTON] = show
     }
 
-    suspend fun setUseGemini(enabled: Boolean) = edit {
-        it[Keys.USE_GEMINI] = enabled
+    suspend fun setTranslationOutputMode(mode: TranscriptionOutputMode) = edit {
+        it[Keys.TRANSLATION_OUTPUT_MODE] = normalizeTranslationOutputMode(mode).rawValue
     }
 
-    suspend fun setPostProcessingPrompt(prompt: String) = edit {
-        it[Keys.POST_PROCESSING_PROMPT] = prompt
-    }
-
-    suspend fun setTranslationEnabled(enabled: Boolean) = edit {
-        it[Keys.TRANSLATION_ENABLED] = enabled
-    }
-
-    suspend fun setTranslationIncludeSource(include: Boolean) = edit {
-        it[Keys.TRANSLATION_INCLUDE_SOURCE] = include
-    }
-
-    suspend fun setTargetLanguage(language: LanguageOption) = edit {
-        // Stack semantics: drop the new pick, prepend the previous selection,
-        // cap at MAX_RECENT — same shape as `setLanguage` for the dictation list.
-        val previous = LanguageOption.fromCode(it[Keys.TARGET_LANGUAGE])
-        val recent = decodeRecent(it[Keys.RECENT_TARGET_LANGUAGES]).filterNot { lang -> lang == language }
-        val updated = (listOf(previous) + recent)
-            .filterNot { lang -> lang == language }
-            .take(MAX_RECENT)
-        it[Keys.TARGET_LANGUAGE] = language.code
-        it[Keys.RECENT_TARGET_LANGUAGES] = encodeRecent(updated)
+    suspend fun setTranslationLanguage(language: LanguageOption) = edit {
+        it[Keys.TRANSLATION_LANGUAGE] = language.code
     }
 
     suspend fun setRecordingMode(mode: RecordingMode) = edit {
         it[Keys.RECORDING_MODE] = mode.rawValue
     }
 
-    suspend fun setHandsfreeMaxMinutes(minutes: Int) = edit {
-        it[Keys.HANDSFREE_MAX_MINUTES] = minutes.coerceAtLeast(1)
-    }
-
-    suspend fun setTriggerMode(mode: TriggerMode) = edit {
-        it[Keys.TRIGGER_MODE] = mode.rawValue
+    suspend fun setHandsfreeMaxSeconds(seconds: Int) = edit {
+        it[Keys.HANDSFREE_MAX_SECONDS] = clampHandsfreeSeconds(seconds)
     }
 
     suspend fun setBubbleOpacity(opacity: Float) = edit {
@@ -137,32 +107,43 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { prefs -> transform(prefs) }
     }
 
-    private fun decodeRecent(raw: String?): List<LanguageOption> {
-        if (raw.isNullOrBlank()) return emptyList()
-        return raw.split(",")
-            .filter { it.isNotBlank() }
-            .map { LanguageOption.fromCode(it) }
-            .distinct()
-            .take(MAX_RECENT)
+    private fun readHandsfreeMaxSeconds(prefs: Preferences): Int {
+        val seconds = prefs[Keys.HANDSFREE_MAX_SECONDS]
+        if (seconds != null) return clampHandsfreeSeconds(seconds)
+        val legacyMinutes = prefs[Keys.LEGACY_HANDSFREE_MAX_MINUTES]
+        if (legacyMinutes != null) return clampHandsfreeSeconds(legacyMinutes * 60)
+        return DEFAULT_HANDSFREE_SECONDS
     }
 
-    private fun encodeRecent(list: List<LanguageOption>): String =
-        list.joinToString(",") { it.code }
+    private fun readTranslationOutputMode(prefs: Preferences): TranscriptionOutputMode {
+        val saved = prefs[Keys.TRANSLATION_OUTPUT_MODE]
+        if (saved != null) return normalizeTranslationOutputMode(TranscriptionOutputMode.fromRaw(saved))
+        return if (prefs[Keys.LEGACY_TRANSLATION_INCLUDE_SOURCE] == true) {
+            TranscriptionOutputMode.ORIGINAL_AND_TRANSLATION
+        } else {
+            TranscriptionOutputMode.TRANSLATED
+        }
+    }
+
+    private fun normalizeTranslationOutputMode(mode: TranscriptionOutputMode): TranscriptionOutputMode =
+        if (mode.requiresTargetLanguage) mode else TranscriptionOutputMode.TRANSLATED
+
+    private fun normalizeDictationOutputMode(mode: TranscriptionOutputMode): TranscriptionOutputMode =
+        if (mode.requiresTargetLanguage) TranscriptionOutputMode.CORRECTED else mode
 
     private object Keys {
-        val LANGUAGE = stringPreferencesKey("dictation.language")
-        val RECENT_LANGUAGES = stringPreferencesKey("dictation.recentLanguages")
-        val TRANSCRIPTION_MODEL = stringPreferencesKey("groq.transcriptionModel")
-        val POST_PROCESSING_ENABLED = booleanPreferencesKey("llm.postProcessingEnabled")
-        val USE_GEMINI = booleanPreferencesKey("llm.useGemini")
-        val POST_PROCESSING_PROMPT = stringPreferencesKey("llm.postProcessingSystemPrompt")
-        val TRANSLATION_ENABLED = booleanPreferencesKey("llm.translationEnabled")
-        val TARGET_LANGUAGE = stringPreferencesKey("llm.targetLanguage")
-        val RECENT_TARGET_LANGUAGES = stringPreferencesKey("llm.recentTargetLanguages")
-        val TRANSLATION_INCLUDE_SOURCE = booleanPreferencesKey("llm.translationIncludeSource")
+        val DICTATION_OUTPUT_MODE = stringPreferencesKey("dictation.outputMode")
+        val CUSTOM_PROMPT = stringPreferencesKey("dictation.customPrompt")
+        val SHOW_TRANSLATE_BUTTON = booleanPreferencesKey("bubble.showTranslateButton")
+        val LEGACY_SHOW_TRANSLATE_BUTTON = booleanPreferencesKey("llm.translationEnabled")
+        val TRANSLATION_OUTPUT_MODE = stringPreferencesKey("translation.outputMode")
+        val TRANSLATION_LANGUAGE = stringPreferencesKey("translation.language")
+        val LEGACY_TRANSLATION_LANGUAGE = stringPreferencesKey("dictation.translationLanguage")
+        val LEGACY_TARGET_LANGUAGE = stringPreferencesKey("llm.targetLanguage")
+        val LEGACY_TRANSLATION_INCLUDE_SOURCE = booleanPreferencesKey("llm.translationIncludeSource")
         val RECORDING_MODE = stringPreferencesKey("app.recordingMode")
-        val HANDSFREE_MAX_MINUTES = intPreferencesKey("app.handsfreeMaxMinutes")
-        val TRIGGER_MODE = stringPreferencesKey("trigger.mode")
+        val HANDSFREE_MAX_SECONDS = intPreferencesKey("app.handsfreeMaxSeconds")
+        val LEGACY_HANDSFREE_MAX_MINUTES = intPreferencesKey("app.handsfreeMaxMinutes")
         val BUBBLE_OPACITY = floatPreferencesKey("bubble.opacity")
         val SHOW_BUBBLE_ONLY_WHEN_KEYBOARD = booleanPreferencesKey("bubble.showOnlyWhenKeyboard")
         val BUBBLE_X = intPreferencesKey("bubble.x")
@@ -172,26 +153,25 @@ class SettingsRepository(private val context: Context) {
     }
 
     companion object {
-        const val MAX_RECENT = 3
+        const val MIN_HANDSFREE_SECONDS = 30
+        const val MAX_HANDSFREE_SECONDS = 7 * 60
+        const val DEFAULT_HANDSFREE_SECONDS = 60
         const val DEFAULT_BUBBLE_OPACITY = 0.7f
         const val MIN_OPACITY = 0.1f
+
+        fun clampHandsfreeSeconds(seconds: Int): Int =
+            seconds.coerceIn(MIN_HANDSFREE_SECONDS, MAX_HANDSFREE_SECONDS)
     }
 }
 
 data class SettingsState(
-    val language: LanguageOption,
-    val recentLanguages: List<LanguageOption>,
-    val transcriptionModel: TranscriptionModel,
-    val postProcessingEnabled: Boolean,
-    val useGemini: Boolean,
-    val postProcessingPrompt: String,
-    val translationEnabled: Boolean,
-    val targetLanguage: LanguageOption,
-    val recentTargetLanguages: List<LanguageOption>,
-    val translationIncludeSource: Boolean,
+    val dictationOutputMode: TranscriptionOutputMode,
+    val customPrompt: String,
+    val showTranslateButton: Boolean,
+    val translationOutputMode: TranscriptionOutputMode,
+    val translationLanguage: LanguageOption,
     val recordingMode: RecordingMode,
-    val handsfreeMaxMinutes: Int,
-    val triggerMode: TriggerMode,
+    val handsfreeMaxSeconds: Int,
     val bubbleOpacity: Float,
     val showBubbleOnlyWhenKeyboard: Boolean,
     /** Persisted bubble window position. -1 means "never set, use default". */

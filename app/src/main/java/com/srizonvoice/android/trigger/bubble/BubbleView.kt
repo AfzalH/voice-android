@@ -28,11 +28,11 @@ import kotlin.random.Random
  *
  *  - **Idle / Error.** Rounded-square white tile with the SrizonVoice waveform
  *    logo (matches the launcher icon).
- *  - **Recording / Transcribing in handsfree.** Four-element layout left to
- *    right: settings (⚙) → cancel (✕) → live waveform / spinner → done (✓).
- *    Glyphs are official Material Symbols rendered as vector drawables, tinted
- *    on the fly. Settings opens the Settings screen so the user can tweak
- *    opacity / language without leaving the bubble.
+ *  - **Recording / Transcribing in handsfree.** Inline settings, cancel, live
+ *    waveform/spinner, optional translate, and done actions. Glyphs are official
+ *    Material Symbols rendered as vector drawables, tinted on the fly. Settings
+ *    opens the Settings screen so the user can tweak opacity and output behavior
+ *    without leaving the bubble.
  *  - **Recording / Transcribing in push-to-talk.** Single gradient pill with a
  *    full white waveform / spinner. PTT users release-to-stop, so explicit
  *    buttons aren't needed.
@@ -71,7 +71,6 @@ class BubbleView(context: Context) : View(context) {
         setMeasuredDimension(width, PILL_PX)
     }
 
-    /** Active-state width depends on whether the translate button is shown. */
     fun activeWidth(): Int = if (showTranslateInBubble()) WIDE_PX_WITH_TRANSLATE else WIDE_PX
 
     /** Width swing between idle and active state — used by the X-shift logic. */

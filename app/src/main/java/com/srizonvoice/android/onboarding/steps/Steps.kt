@@ -26,7 +26,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -95,11 +95,11 @@ private fun StepScaffold(
 fun WelcomeStep(onContinue: () -> Unit) {
     StepScaffold(
         title = "Welcome to SrizonVoice",
-        subtitle = "Hold-to-talk dictation that drops your transcript into any text field on your phone.",
+        subtitle = "Handsfree dictation that drops Gemini's final text into any text field on your phone.",
         content = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Bullet("You'll add your own Groq API key (BYOK) — your audio never goes through us.")
-                Bullet("Optional Gemini cleanup polishes filler words and punctuation.")
+                Bullet("You'll add your own Gemini API key (BYOK) — your audio never goes through us.")
+                Bullet("Gemini can transcribe as-is, correct dictated speech, or translate into a target language.")
                 Bullet("This setup walks you through every permission we need, one at a time.")
             }
         },
@@ -110,25 +110,26 @@ fun WelcomeStep(onContinue: () -> Unit) {
 }
 
 @Composable
-fun GroqKeyStep(
-    initialValue: String,
+fun GeminiKeyStep(
+    initialKey: String,
     onValidate: suspend (String) -> Boolean,
     onContinue: (String) -> Unit,
 ) {
-    var value by remember { mutableStateOf(initialValue) }
+    var value by remember { mutableStateOf(initialKey) }
     var validating by remember { mutableStateOf(false) }
-    var validated by remember { mutableStateOf(initialValue.isNotBlank()) }
+    var validated by remember { mutableStateOf(initialKey.isNotBlank()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val uriHandler = LocalUriHandler.current
 
     StepScaffold(
-        title = "Add your Groq API key",
-        subtitle = "We'll send your audio to Groq's Whisper API for transcription. Get a free key from console.groq.com.",
+        title = "Add your Gemini API key",
+        subtitle = "We'll send your audio directly to Gemini for transcription, correction, and translation.",
         content = {
             OutlinedTextField(
                 value = value,
                 onValueChange = { value = it; validated = false; errorMessage = null },
-                label = { Text("Groq API key") },
+                label = { Text("Gemini API key") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
                 visualTransformation = if (validated) VisualTransformation.None else PasswordVisualTransformation(),
@@ -154,6 +155,13 @@ fun GroqKeyStep(
                 if (validated && !validating) Icon(Icons.Filled.CheckCircle, null, tint = Color(0xFF1EAB6E))
             }
             errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            if (!validated) {
+                TextButton(
+                    onClick = { uriHandler.openUri("https://aistudio.google.com/apikey") },
+                ) {
+                    Text("Get an API key from Google AI Studio")
+                }
+            }
         },
         actions = {
             Button(
@@ -166,77 +174,10 @@ fun GroqKeyStep(
 }
 
 @Composable
-fun GeminiKeyStep(
-    initialKey: String,
-    onValidate: suspend (String) -> Boolean,
-    onContinue: (useGemini: Boolean, key: String) -> Unit,
-) {
-    var enabled by remember { mutableStateOf(initialKey.isNotBlank()) }
-    var key by remember { mutableStateOf(initialKey) }
-    var validating by remember { mutableStateOf(false) }
-    var validated by remember { mutableStateOf(initialKey.isNotBlank()) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-
-    StepScaffold(
-        title = "Use Gemini for cleanup?",
-        subtitle = "Optional. Gemini polishes punctuation and filler words. Off by default — Whisper transcripts are usually fine.",
-        content = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text("Use Gemini")
-                Switch(checked = enabled, onCheckedChange = { enabled = it; if (!it) errorMessage = null })
-            }
-            if (enabled) {
-                OutlinedTextField(
-                    value = key,
-                    onValueChange = { key = it; validated = false; errorMessage = null },
-                    label = { Text("Gemini API key") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
-                    visualTransformation = if (validated) VisualTransformation.None else PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                validating = true
-                                errorMessage = null
-                                val ok = onValidate(key.trim())
-                                validating = false
-                                validated = ok
-                                if (!ok) errorMessage = "Invalid API key. Check Settings."
-                            }
-                        },
-                        enabled = !validating && key.isNotBlank(),
-                    ) { Text(if (validated) "Validated" else "Validate") }
-                    Spacer(Modifier.size(12.dp))
-                    if (validating) CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                    if (validated && !validating) Icon(Icons.Filled.CheckCircle, null, tint = Color(0xFF1EAB6E))
-                }
-                errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            }
-        },
-        actions = {
-            Button(
-                onClick = { onContinue(enabled, key.trim()) },
-                enabled = !enabled || validated,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(if (enabled) "Continue" else "Skip — use Whisper only") }
-        },
-    )
-}
-
-@Composable
 fun MicrophoneStep(granted: Boolean, onRequest: () -> Unit, onContinue: () -> Unit) {
     StepScaffold(
         title = "Microphone access",
-        subtitle = "We capture audio at 16 kHz mono and send it to Groq Whisper. Nothing is stored after the transcript comes back.",
+        subtitle = "We capture audio at 16 kHz mono and send it to Gemini. Nothing is stored after the final text comes back.",
         content = { GrantStatusRow(granted, "Microphone permission") },
         actions = {
             if (!granted) Button(onClick = onRequest, modifier = Modifier.fillMaxWidth()) { Text("Grant permission") }

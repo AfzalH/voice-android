@@ -17,7 +17,7 @@ import kotlin.concurrent.Volatile
  * Mic capture pipeline.
  *
  * - `MediaRecorder.AudioSource.VOICE_RECOGNITION` (applies AEC/NS).
- * - 16 kHz mono Int16 PCM — matches Whisper's expected format, no resampling.
+ * - 16 kHz mono Int16 PCM, wrapped as WAV before sending to Gemini.
  * - Buffer = `AudioRecord.getMinBufferSize() * 2`.
  * - Runs on a dedicated single-thread executor; never touches the UI thread.
  *

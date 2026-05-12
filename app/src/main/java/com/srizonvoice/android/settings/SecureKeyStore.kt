@@ -24,20 +24,14 @@ class SecureKeyStore(context: Context) {
         )
     }
 
-    var groqApiKey: String
-        get() = prefs.getString(KEY_GROQ, "").orEmpty()
-        set(value) = prefs.edit().putString(KEY_GROQ, value).apply()
-
     var geminiApiKey: String
         get() = prefs.getString(KEY_GEMINI, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_GEMINI, value).apply()
 
-    fun hasGroqKey(): Boolean = groqApiKey.isNotBlank()
     fun hasGeminiKey(): Boolean = geminiApiKey.isNotBlank()
 
     private companion object {
         const val FILE = "srizon_secure_keys"
-        const val KEY_GROQ = "groq.apiKey"
         const val KEY_GEMINI = "gemini.apiKey"
     }
 }

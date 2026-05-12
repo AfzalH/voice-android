@@ -140,9 +140,7 @@ class BubbleService : Service() {
                 idleOpacity = settings.bubbleOpacity
                 onlyWhenKeyboard = settings.showBubbleOnlyWhenKeyboard
                 bubbleView?.setRecordingMode(settings.recordingMode)
-                bubbleView?.setTranslateButtonShown(
-                    settings.postProcessingEnabled && settings.translationEnabled,
-                )
+                bubbleView?.setTranslateButtonShown(settings.showTranslateButton)
                 applyOpacity()
                 applyVisibility()
             }
@@ -528,7 +526,7 @@ class BubbleService : Service() {
 
     private fun startRecording() {
         val app = applicationContext as SrizonApp
-        app.recordingCoordinator.startRecording()
+        app.recordingCoordinator.startRecording(autoStop = currentMode == RecordingMode.HANDSFREE)
     }
 
     private fun stopAndTranscribe(translate: Boolean = false) {

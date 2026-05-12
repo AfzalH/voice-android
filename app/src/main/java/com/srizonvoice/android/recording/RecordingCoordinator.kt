@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import androidx.annotation.RequiresPermission
 import com.srizonvoice.android.api.GeminiClient
-import com.srizonvoice.android.api.GroqClient
 import com.srizonvoice.android.audio.AudioCaptureEngine
 import com.srizonvoice.android.audio.WavEncoder
 import com.srizonvoice.android.settings.SecureKeyStore
@@ -14,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Orchestrates the recording → transcribe → (post-process) → emit-transcript flow.
+ * Orchestrates the recording -> Gemini transcribe/transform -> emit-transcript flow.
  *
  * Mirrors macOS `DictationCoordinator` (`Services.swift:103-211`) but emits state via
  * Kotlin Flows so multiple consumers (in-app UI, bubble overlay, accessibility service,
@@ -34,7 +34,6 @@ class RecordingCoordinator(
     private val appContext: Context,
     private val settings: SettingsRepository,
     private val keys: SecureKeyStore,
-    private val groq: GroqClient = GroqClient(),
     private val gemini: GeminiClient = GeminiClient(),
     private val scope: CoroutineScope = MainScope(),
 ) {
@@ -50,13 +49,16 @@ class RecordingCoordinator(
     val errors: SharedFlow<String> = _errors.asSharedFlow()
 
     private var transcribeJob: Job? = null
+    private var autoStopJob: Job? = null
 
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
-    fun startRecording() {
+    fun startRecording(autoStop: Boolean = false) {
         if (_state.value is RecordingState.Recording || _state.value is RecordingState.Transcribing) return
         try {
+            cancelAutoStop()
             engine.start { level -> _state.value = RecordingState.Recording(level) }
             _state.value = RecordingState.Recording(visualLevel = 0f)
+            if (autoStop) startAutoStop()
         } catch (e: DictationError) {
             emitError(e.userMessage)
         } catch (_: Throwable) {
@@ -65,18 +67,14 @@ class RecordingCoordinator(
     }
 
     /**
-     * Stop, encode, transcribe, optionally post-process, and emit a transcript event.
-     *
-     * @param translate when true *and* the user's configured target language differs
-     *  from the dictation language, the LLM cleanup step is replaced with a
-     *  translation prompt that produces text in the target language. The bubble's
-     *  Translate (🌐) button passes true; Done (✓) and PTT release pass false.
+     * Stop, encode, send to Gemini with the selected output mode, and emit a transcript event.
      */
     fun stopAndTranscribe(sourcePackage: String? = null, translate: Boolean = false) {
         if (_state.value !is RecordingState.Recording) {
             engine.cancel()
             return
         }
+        cancelAutoStop()
         val capture = engine.stopAndDrain()
 
         // Empty / silence-only recordings: no API call, no error, return to idle.
@@ -106,6 +104,7 @@ class RecordingCoordinator(
     fun cancel() {
         engine.cancel()
         transcribeJob?.cancel()
+        cancelAutoStop()
         _state.value = RecordingState.Idle
     }
 
@@ -116,88 +115,34 @@ class RecordingCoordinator(
     ): String {
         val wav = withContext(Dispatchers.Default) { WavEncoder.encode(pcm) }
         val current = settings.current()
-        val groqKey = keys.groqApiKey
-        if (groqKey.isBlank()) throw DictationError.InvalidApiKey
+        val geminiKey = keys.geminiApiKey
+        if (geminiKey.isBlank()) throw DictationError.InvalidApiKey
 
-        val rawTranscript = groq.transcribe(
-            apiKey = groqKey,
+        val outputMode = if (translate) current.translationOutputMode else current.dictationOutputMode
+        return gemini.transcribe(
+            apiKey = geminiKey,
             wav = wav,
-            model = current.transcriptionModel,
-            languageCode = current.language.code,
+            outputMode = outputMode,
+            customPrompt = current.customPrompt,
+            targetLanguage = current.translationLanguage,
+            targetAppName = sourcePackage,
         ).trim()
-        if (rawTranscript.isBlank()) return ""
+    }
 
-        if (!current.postProcessingEnabled) return rawTranscript
-
-        val context = sourcePackage?.let { " Note: The dictation was triggered in the context of: $it." }.orEmpty()
-        // Translation only fires when the caller explicitly asked for it (e.g.
-        // the user tapped the bubble's Translate button). The settings toggle
-        // controls visibility of that button — not auto-translation.
-        val translateActive = translate && current.targetLanguage != current.language
-        val basePrompt = if (translateActive) {
-            buildTranslationPrompt(
-                sourceDisplay = current.language.displayName,
-                targetDisplay = current.targetLanguage.displayName,
-                includeSource = current.translationIncludeSource,
-            )
-        } else {
-            current.postProcessingPrompt
-        }
-        val systemPrompt = basePrompt + context
-
-        return if (current.useGemini) {
-            val key = keys.geminiApiKey
-            if (key.isBlank()) rawTranscript
-            else runCatching { gemini.cleanup(key, systemPrompt, rawTranscript).trim() }
-                .getOrElse { rawTranscript }
-        } else {
-            // Default Groq model for cleanup matches the macOS default (`openai/gpt-oss-120b`).
-            runCatching {
-                groq.postProcessChat(
-                    apiKey = groqKey,
-                    modelId = "openai/gpt-oss-120b",
-                    systemPrompt = systemPrompt,
-                    transcript = rawTranscript,
-                ).trim()
-            }.getOrElse { rawTranscript }
+    private fun startAutoStop() {
+        autoStopJob?.cancel()
+        autoStopJob = scope.launch {
+            val seconds = settings.current().handsfreeMaxSeconds
+            delay(seconds * 1_000L)
+            if (_state.value is RecordingState.Recording) {
+                stopAndTranscribe()
+            }
         }
     }
 
-    /**
-     * Prompt used when the user has enabled translation and picked a target
-     * language different from the dictation language. Replaces the cleanup
-     * prompt entirely — the cleanup-only prompt's "preserve casing for short
-     * queries" rules don't make sense once you're translating into a different
-     * language.
-     *
-     * Two output shapes, controlled by `includeSource`:
-     *  - true  → "<cleaned source> — <translation>" (em-dash separator).
-     *  - false → "<translation>" (translation only).
-     */
-    private fun buildTranslationPrompt(
-        sourceDisplay: String,
-        targetDisplay: String,
-        includeSource: Boolean,
-    ): String {
-        val cleanupClause = "You are a translation assistant. The user message is a raw " +
-            "transcript from a speech-to-text system, originally spoken in $sourceDisplay. " +
-            "First, clean it up — fix obvious recognition errors, drop filler words " +
-            "like 'um' / 'uh' / repeated words, restore reasonable punctuation. " +
-            "Then translate the cleaned $sourceDisplay text into $targetDisplay. "
-        return if (includeSource) {
-            cleanupClause +
-                "Output exactly: the cleaned $sourceDisplay text, followed by a " +
-                "space, an em-dash (—), another space, then the $targetDisplay " +
-                "translation. Example format: 'Cleaned source — Translated text'. " +
-                "Return ONLY this combined string — no labels like 'Source:' or " +
-                "'Translation:', no quotes around the output, no commentary, no " +
-                "explanations."
-        } else {
-            cleanupClause +
-                "Return ONLY the cleaned, translated text — no commentary, no " +
-                "original-language version, no quotes around the output, no " +
-                "explanations."
-        }
+    private fun cancelAutoStop() {
+        autoStopJob?.cancel()
+        autoStopJob = null
     }
 
     private fun emitError(message: String) {
@@ -205,7 +150,7 @@ class RecordingCoordinator(
         _errors.tryEmit(message)
         // Auto-return to idle so the UI doesn't get stuck in error.
         scope.launch {
-            kotlinx.coroutines.delay(2_500)
+            delay(2_500)
             if (_state.value is RecordingState.Error) _state.value = RecordingState.Idle
         }
     }

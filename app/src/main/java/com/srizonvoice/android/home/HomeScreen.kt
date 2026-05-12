@@ -29,7 +29,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VerifiedUser
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -67,7 +66,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -76,16 +74,16 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.srizonvoice.android.R
 import com.srizonvoice.android.api.GeminiClient
-import com.srizonvoice.android.api.GroqClient
 import com.srizonvoice.android.data.LanguageOption
 import com.srizonvoice.android.data.RecordingMode
-import com.srizonvoice.android.data.TranscriptionModel
+import com.srizonvoice.android.data.TranscriptionOutputMode
 import com.srizonvoice.android.onboarding.PermissionWatcher
 import com.srizonvoice.android.onboarding.PermissionsSnapshot
 import com.srizonvoice.android.settings.SecureKeyStore
 import com.srizonvoice.android.settings.SettingsRepository
 import com.srizonvoice.android.settings.SettingsState
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /**
  * The main app screen after onboarding. A single page with a branded header
@@ -310,19 +308,6 @@ private fun DictationTab(state: SettingsState, settings: SettingsRepository) {
         contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 12.dp, bottom = 24.dp),
     ) {
         item {
-            LanguagePicker(
-                selected = state.language,
-                recents = state.recentLanguages,
-                onSelect = { lang -> scope.launch { settings.setLanguage(lang) } },
-            )
-        }
-        item {
-            ModelPicker(
-                selected = state.transcriptionModel,
-                onSelect = { scope.launch { settings.setTranscriptionModel(it) } },
-            )
-        }
-        item {
             ModeRow(
                 selected = state.recordingMode,
                 onSelect = { scope.launch { settings.setRecordingMode(it) } },
@@ -330,8 +315,8 @@ private fun DictationTab(state: SettingsState, settings: SettingsRepository) {
         }
         item {
             HandsfreeMaxRow(
-                minutes = state.handsfreeMaxMinutes,
-                onChange = { scope.launch { settings.setHandsfreeMaxMinutes(it) } },
+                seconds = state.handsfreeMaxSeconds,
+                onChange = { scope.launch { settings.setHandsfreeMaxSeconds(it) } },
             )
         }
         item {
@@ -362,65 +347,60 @@ private fun AITab(state: SettingsState, settings: SettingsRepository, keys: Secu
     ) {
         item {
             ApiKeyCard(
-                title = "Groq API key",
-                initialValue = keys.groqApiKey,
-                onSave = { keys.groqApiKey = it },
-                validate = { GroqClient().validateKey(it) },
-            )
-        }
-        item {
-            ApiKeyCard(
-                title = "Gemini API key (optional)",
+                title = "Gemini API key",
                 initialValue = keys.geminiApiKey,
                 onSave = { keys.geminiApiKey = it },
                 validate = { GeminiClient().validateKey(it) },
             )
         }
         item {
-            ToggleRow(
-                label = "Clean up transcripts with an LLM",
-                checked = state.postProcessingEnabled,
-                onCheckedChange = { scope.launch { settings.setPostProcessingEnabled(it) } },
+            OutputModePicker(
+                title = "Dictation output",
+                selected = state.dictationOutputMode,
+                options = listOf(
+                    TranscriptionOutputMode.AS_IS,
+                    TranscriptionOutputMode.CORRECTED,
+                    TranscriptionOutputMode.CUSTOM_PROMPT,
+                ),
+                onSelect = { scope.launch { settings.setDictationOutputMode(it) } },
             )
+        }
+        if (state.dictationOutputMode == TranscriptionOutputMode.CUSTOM_PROMPT) {
+            item {
+                PromptEditor(
+                    value = state.customPrompt,
+                    onSave = { scope.launch { settings.setCustomPrompt(it) } },
+                )
+            }
         }
         item {
             ToggleRow(
-                label = "Use Gemini (otherwise uses Groq's own model)",
-                checked = state.useGemini,
-                enabled = state.postProcessingEnabled,
-                onCheckedChange = { scope.launch { settings.setUseGemini(it) } },
+                label = "Show translate button on the bubble",
+                checked = state.showTranslateButton,
+                onCheckedChange = { scope.launch { settings.setShowTranslateButton(it) } },
             )
         }
-        item {
-            ToggleRow(
-                label = "Show a translate button on the bubble",
-                checked = state.translationEnabled,
-                enabled = state.postProcessingEnabled,
-                onCheckedChange = { scope.launch { settings.setTranslationEnabled(it) } },
-            )
+        if (state.showTranslateButton) {
+            item {
+                OutputModePicker(
+                    title = "Translation output",
+                    selected = state.translationOutputMode,
+                    options = listOf(
+                        TranscriptionOutputMode.TRANSLATED,
+                        TranscriptionOutputMode.ORIGINAL_AND_TRANSLATION,
+                    ),
+                    onSelect = { scope.launch { settings.setTranslationOutputMode(it) } },
+                )
+            }
         }
-        if (state.postProcessingEnabled && state.translationEnabled) {
+        if (state.showTranslateButton) {
             item {
                 TargetLanguagePicker(
-                    selected = state.targetLanguage,
-                    recents = state.recentTargetLanguages,
-                    sourceLanguage = state.language,
-                    onSelect = { scope.launch { settings.setTargetLanguage(it) } },
+                    title = "Translate to",
+                    selected = state.translationLanguage,
+                    onSelect = { scope.launch { settings.setTranslationLanguage(it) } },
                 )
             }
-            item {
-                ToggleRow(
-                    label = "Include cleaned original alongside the translation",
-                    checked = state.translationIncludeSource,
-                    onCheckedChange = { scope.launch { settings.setTranslationIncludeSource(it) } },
-                )
-            }
-        }
-        item {
-            PromptEditor(
-                value = state.postProcessingPrompt,
-                onSave = { scope.launch { settings.setPostProcessingPrompt(it) } },
-            )
         }
     }
 }
@@ -496,43 +476,19 @@ private fun ApiKeyCard(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LanguagePicker(
-    selected: LanguageOption,
-    recents: List<LanguageOption>,
-    onSelect: (LanguageOption) -> Unit,
+private fun OutputModePicker(
+    title: String,
+    selected: TranscriptionOutputMode,
+    options: List<TranscriptionOutputMode>,
+    onSelect: (TranscriptionOutputMode) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    SectionCard(title = "Language") {
-        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
-            OutlinedTextField(
-                value = selected.displayName,
-                onValueChange = {},
-                readOnly = true,
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(),
-            )
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-            ) {
-                LanguageOption.entries.forEach { option ->
-                    DropdownMenuItem(
-                        text = { Text(option.displayName) },
-                        onClick = { expanded = false; onSelect(option) },
-                    )
-                }
-            }
-        }
-        if (recents.isNotEmpty()) {
-            Text("Recently used", style = MaterialTheme.typography.labelMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                recents.forEach { lang ->
-                    AssistChip(onClick = { onSelect(lang) }, label = { Text(lang.displayName) })
-                }
+    SectionCard(title = title) {
+        options.forEach { mode ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = selected == mode, onClick = { onSelect(mode) })
+                Spacer(Modifier.size(8.dp))
+                Text(mode.displayName)
             }
         }
     }
@@ -541,13 +497,12 @@ private fun LanguagePicker(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TargetLanguagePicker(
+    title: String,
     selected: LanguageOption,
-    recents: List<LanguageOption>,
-    sourceLanguage: LanguageOption,
     onSelect: (LanguageOption) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    SectionCard(title = "Translate into") {
+    SectionCard(title = title) {
         ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
             OutlinedTextField(
                 value = selected.displayName,
@@ -560,55 +515,6 @@ private fun TargetLanguagePicker(
                 LanguageOption.entries.forEach { option ->
                     DropdownMenuItem(
                         text = { Text(option.displayName) },
-                        onClick = { expanded = false; onSelect(option) },
-                    )
-                }
-            }
-        }
-        if (recents.isNotEmpty()) {
-            Text("Recently used", style = MaterialTheme.typography.labelMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                recents.forEach { lang ->
-                    AssistChip(onClick = { onSelect(lang) }, label = { Text(lang.displayName) })
-                }
-            }
-        }
-        if (selected == sourceLanguage) {
-            Text(
-                "Same as the dictation language — tapping the bubble's translate button will be a no-op.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            )
-        } else {
-            Text(
-                "Tap the bubble's translate button to clean and translate from ${sourceLanguage.displayName} into ${selected.displayName}. The check (✓) button stays direct dictation.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ModelPicker(selected: TranscriptionModel, onSelect: (TranscriptionModel) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    SectionCard(title = "Whisper model") {
-        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
-            OutlinedTextField(
-                value = "${selected.displayName}  (${selected.id})",
-                onValueChange = {},
-                readOnly = true,
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                modifier = Modifier.fillMaxWidth().menuAnchor(),
-            )
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-            ) {
-                TranscriptionModel.entries.forEach { option ->
-                    DropdownMenuItem(
-                        text = { Text("${option.displayName} (${option.id})") },
                         onClick = { expanded = false; onSelect(option) },
                     )
                 }
@@ -644,7 +550,7 @@ private fun ToggleRow(
 private fun PromptEditor(value: String, onSave: (String) -> Unit) {
     var draft by remember { mutableStateOf(value) }
     var saved by remember { mutableStateOf(true) }
-    SectionCard(title = "Cleanup prompt") {
+    SectionCard(title = "Custom prompt") {
         OutlinedTextField(
             value = draft,
             onValueChange = { draft = it; saved = false },
@@ -673,15 +579,42 @@ private fun ModeRow(selected: RecordingMode, onSelect: (RecordingMode) -> Unit) 
 }
 
 @Composable
-private fun HandsfreeMaxRow(minutes: Int, onChange: (Int) -> Unit) {
-    SectionCard(title = "Handsfree max minutes") {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(1, 3, 5, 10, 15).forEach { value ->
-                AssistChip(onClick = { onChange(value) }, label = { Text("$value") }, enabled = minutes != value)
-            }
-            Text("$minutes min", style = MaterialTheme.typography.bodyMedium)
+private fun HandsfreeMaxRow(seconds: Int, onChange: (Int) -> Unit) {
+    val clamped = SettingsRepository.clampHandsfreeSeconds(seconds)
+    SectionCard(title = "Handsfree auto-stop") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Auto-stop after", style = MaterialTheme.typography.bodyMedium)
+            Text(handsfreeDurationLabel(clamped), style = MaterialTheme.typography.bodyMedium)
         }
+        Slider(
+            value = clamped.toFloat(),
+            onValueChange = { raw ->
+                val stepped = ((raw / 30f).roundToInt() * 30)
+                onChange(SettingsRepository.clampHandsfreeSeconds(stepped))
+            },
+            valueRange = SettingsRepository.MIN_HANDSFREE_SECONDS.toFloat()..
+                SettingsRepository.MAX_HANDSFREE_SECONDS.toFloat(),
+            steps = ((SettingsRepository.MAX_HANDSFREE_SECONDS - SettingsRepository.MIN_HANDSFREE_SECONDS) / 30) - 1,
+        )
+        Text(
+            "Recording stops automatically after this duration, or when you tap the bubble again.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
     }
+}
+
+private fun handsfreeDurationLabel(seconds: Int): String {
+    val clamped = SettingsRepository.clampHandsfreeSeconds(seconds)
+    if (clamped < 60) return "$clamped seconds"
+    val minutes = clamped / 60
+    val remainingSeconds = clamped % 60
+    if (remainingSeconds == 0) return if (minutes == 1) "1 minute" else "$minutes minutes"
+    return "${minutes}m ${remainingSeconds}s"
 }
 
 @Composable
