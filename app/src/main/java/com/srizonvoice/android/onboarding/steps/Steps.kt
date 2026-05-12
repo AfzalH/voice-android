@@ -95,10 +95,12 @@ private fun StepScaffold(
 fun WelcomeStep(onContinue: () -> Unit) {
     StepScaffold(
         title = "Welcome to SrizonVoice",
-        subtitle = "Handsfree dictation that drops Gemini's final text into any text field on your phone.",
+        subtitle = "Handsfree dictation with Gemini automatic spoken-language detection and optional translation.",
         content = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Bullet("You'll add your own Gemini API key (BYOK) — your audio never goes through us.")
+                Bullet("The app is free; your only cost is Gemini API usage, which should be very low.")
+                Bullet("Speak in any major language; Gemini detects the spoken language automatically.")
                 Bullet("Gemini can transcribe as-is, correct dictated speech, or translate into a target language.")
                 Bullet("This setup walks you through every permission we need, one at a time.")
             }
@@ -124,7 +126,7 @@ fun GeminiKeyStep(
 
     StepScaffold(
         title = "Add your Gemini API key",
-        subtitle = "We'll send your audio directly to Gemini for transcription, correction, and translation.",
+        subtitle = "We'll send your audio directly to Gemini for automatic spoken-language detection, transcription, correction, and translation.",
         content = {
             OutlinedTextField(
                 value = value,
@@ -177,7 +179,7 @@ fun GeminiKeyStep(
 fun MicrophoneStep(granted: Boolean, onRequest: () -> Unit, onContinue: () -> Unit) {
     StepScaffold(
         title = "Microphone access",
-        subtitle = "We capture audio at 16 kHz mono and send it to Gemini. Nothing is stored after the final text comes back.",
+        subtitle = "We capture audio at 16 kHz mono and send it to Gemini for automatic spoken-language detection and transcription. Nothing is stored after the final text comes back.",
         content = { GrantStatusRow(granted, "Microphone permission") },
         actions = {
             if (!granted) Button(onClick = onRequest, modifier = Modifier.fillMaxWidth()) { Text("Grant permission") }

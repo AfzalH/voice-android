@@ -189,11 +189,18 @@ private fun Header(
                 contentDescription = null,
                 modifier = Modifier.size(36.dp),
             )
-            Text(
-                "SrizonVoice",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "SrizonVoice",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "Gemini adds automatic spoken-language detection and translation.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                )
+            }
         }
         StatusBanner(
             perms = perms,

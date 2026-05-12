@@ -1,14 +1,22 @@
 # SrizonVoice for Android
 
 System-wide voice dictation for Android, ported from the macOS SrizonVoice app.
-Audio goes directly to Gemini, and the final text lands at the cursor in whatever app you're in.
+Audio goes directly to Gemini for automatic spoken-language detection, transcription, and optional target-language translation before the final text lands at the cursor in whatever app you're in.
 BYOK (bring-your-own-key).
+
+SrizonVoice for Android is free. You only pay Google Gemini API usage through your own API key, which should be very low for typical dictation.
 
 See [`ANDROID-SPEC.md`](./ANDROID-SPEC.md) for the design spec.
 
 ## Status
 
 v2.0.0 — Gemini-first transcription, correction, custom prompts, translation output modes, and seconds-based handsfree auto-stop.
+
+## Download
+
+Download the latest installer: [app-release.apk](https://github.com/AfzalH/voice-android/releases/download/v2.0.0/app-release.apk).
+
+Checksums and older builds are available on [GitHub Releases](https://github.com/AfzalH/voice-android/releases/latest).
 
 ## What's in the box
 
@@ -47,6 +55,7 @@ To build from the command line, run:
 6. After "Start dictating", the floating bubble lets you tap to start dictation,
    tap Done for dictation output, tap Translate for translation output when enabled,
    or drag it up to the top to cancel a recording.
+   Gemini uses automatic spoken-language detection and supports all major languages.
 7. The Quick Settings tile is named "Dictate" — long-press the QS panel and add it.
 
 ## Reference fidelity
